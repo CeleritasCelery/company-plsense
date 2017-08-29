@@ -27,7 +27,9 @@ clone this repo then add the following to your `.emacs`
 
 ## Configuration
 `company-plsense-executable`: location of plsense executable 
+
 `company-plsense-config-path`: location of `.plsense` config file
+
 `company-plsense-ignore-compile-errors`: ignore plsense errors when they releate to compiling a file 
 
 ## Limitations
