@@ -14,6 +14,8 @@
   "The location of the plsense config file. Run 'plsense' from the shell to generate this file.")
 (defcustom company-plsense-braces-autopaired t
   "wether or not to assume that braces are auto-paired")
+(defcustom company-plsense-enabled-modes '(cperl-mode perl-mode)
+  "major modes that will use plsense")
 
 (defvar company-plsense--errors '())
 (defvar company-plsense--queue nil)
@@ -42,15 +44,14 @@
   (and (processp company-plsense--process)
        (process-status (process-name company-plsense--process))))
 
-(defun company-plsense--server-request (cmd &optional callback timeout)
+(defun company-plsense--server-request (cmd &optional callback)
   (unless (or company-plsense--server-started-p
            (company-plsense--process-running-p))
     (company-plsense--start-process))
   (company-plsense--async-request cmd (if callback
                                           (lambda (x resp)
                                             (funcall callback (replace-regexp-in-string "\n?>\\s-\\'" "" resp)))
-                                        nil)
-                                  timeout))
+                                        nil)))
 
 (defun company-plsense--server-query (cmd &optional timeout)
   (unless (or company-plsense--server-started-p
@@ -58,7 +59,7 @@
     (company-plsense--start-process))
   (company-plsense--sync-request cmd timeout))
 
-(defun company-plsense--async-request (cmd callback &optional timeout)
+(defun company-plsense--async-request (cmd callback)
   (tq-enqueue company-plsense--queue (if cmd (concat cmd "\n") "") ">\\s-\\'" nil callback t))
 
 (defun company-plsense--sync-request (cmd &optional timeout)
@@ -77,11 +78,9 @@
     (while (and (< counter limit) (not done))
       (accept-process-output company-plsense--process 0.2 nil t)
       (1+ counter))
-    (if (not done)
-        (push
-         (format "COMPANY-PLSENSE: request %s timed out after %d seconds" cmd (/ limit 5))
-         company-plsense--errors))
-    (replace-regexp-in-string "\n?>\\s-\\'" "" reply)))
+    (if done
+        (replace-regexp-in-string "\n?>\\s-\\'" "" reply)
+      (setcar company-plsense--queue nil))))
 
 (defun company-plsense--start-process ()
   (interactive)
@@ -135,6 +134,10 @@
               (setq company-plsense--current-method "")
               (message "opened %s" fpath)))))))
 
+(defun company-plsense-open-buffer ()
+  (interactive)
+  (company-plsense--open-file (buffer-file-name (current-buffer))))
+
 ;;;###autoload
 (defun company-plsense-start-server ()
   "Start server process."
@@ -152,17 +155,14 @@
   "Stop server process."
   (interactive)
   (message "Stopping server ...")
-  (company-plsense--server-request
-   "serverstop"
-   (lambda (resp)
-     (when (string-match company-plsense--done-re resp)
-       (company-plsense--stop-process)
-       (setq company-plsense--server-started-p nil)
-       (message "plsense server stopped")))))
+  (company-plsense--sync-request "serverstop" 5)
+  (company-plsense-kill-process)
+  (message "plsense server stopped"))
 
-(defun company-plsense--stop-process ()
-  (when (company-plsense--process-exists-p)
-    (process-send-string company-plsense--process "exit\n")))
+(defun company-plsense-kill-process ()
+  (interactive)
+  (setq company-plsense--server-started-p nil)
+  (tq-close company-plsense--queue))
 
 ;;;###autoload
 (defun company-plsense-refresh-server ()
@@ -184,17 +184,20 @@
 (defun company-plsense-update ()
   "reanalyze the file"
   (interactive)
-  (when (eq major-mode 'cperl-mode)
+  (when (memq major-mode company-plsense-enabled-modes)
     (company-plsense--update-file (buffer-file-name (current-buffer)))))
 
 (defun company-plsense-setup ()
   (interactive)
   (unless company-plsense--server-started-p (company-plsense-start-server))
-  (add-hook 'cperl-mode-hook 'company-mode)
+  (--each company-plsense-enabled-modes
+    (add-hook (intern-soft (concat (symbol-name it) "-hook")) 'company-mode))
+  ;; (add-hook 'cperl-mode-hook 'company-mode)
   (add-hook 'after-save-hook 'company-plsense-update)
   (add-to-list 'company-backends 'company-plsense))
 
 (defun company-plsense-update-location ()
+  "set the current file and module for the server."
   (interactive)
   (let ((file (buffer-file-name (current-buffer))))
     (unless (string= company-plsense--current-file file)
@@ -202,13 +205,12 @@
       (setq company-plsense--current-file file)
       (let ((pkg (company-plsense--get-current-package)))
         (company-plsense--server-request (concat "onmod " pkg))
-        (setq company-plsense--current-package pkg))))
-  t)
+        (setq company-plsense--current-package pkg)))))
 
 (defun company-plsense-prefix ()
   "Grab prefix at point.
 Properly detect strings, comments and variables."
-  (when (eq major-mode 'cperl-mode)
+  (when (memq major-mode company-plsense-enabled-modes)
     (company-plsense-update-location)
     (unless (company-in-string-or-comment)
       (--if-let (when (or (looking-back "[$@%&[:alnum:]_{([]" (- (point) 1))
@@ -238,7 +240,12 @@ Properly detect strings, comments and variables."
          (funcall
           callback
           (--map (concat static-prefix it)
-                 (split-string resp "\n" t))))))))
+                 (s-split "\n" resp t))))))))
+
+(defun company-plsense-doc-buffer (candidate)
+  (company-doc-buffer
+   (company-plsense--server-query
+    (concat "assisthelp " (s-chop-prefixes '("$" "@" "%") candidate)))))
 
 ;;;###autoload
 (defun company-plsense (command &optional arg &rest ignored)
@@ -249,7 +256,12 @@ Properly detect strings, comments and variables."
     (prefix (company-plsense-prefix))
     (candidates (cons :async
                       (lambda (callback)
-                        (company-plsense-candidates callback arg))))))
+                        (company-plsense-candidates callback arg))))
+    (doc-buffer (company-plsense-doc-buffer arg))
+    (post-completion (when (and company-plsense-braces-autopaired
+                                (s-suffix? "}" arg)
+                                (looking-at "}"))
+                       (delete-char 1)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; modified transaction queue
