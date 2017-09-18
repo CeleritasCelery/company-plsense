@@ -32,7 +32,8 @@ clone this repo then add the following to your `.emacs`
 
 `company-plsense-ignore-compile-errors`: ignore PlSense errors when they releate to compiling a file 
 
-## How do I setup the PlSense server?
+## How do verify the PlSense server is setup? 
+(note all of these steps except the first one are optional)
 1. Download PlSense from [github](https://github.com/aki2o/plsense) and follow the installation steps.
 2. Pick a test file to verify config is correct.
 3. Start PlSense with `PlSense -i`, which should start an interactive PlSense session.
