@@ -45,7 +45,7 @@
 (defcustom company-plsense-executable "plsense"
   "The location of the PlSense executable. Default is to search for it on $PATH")
 (defcustom company-plsense-ignore-compile-errors t
-  "Ignore errors from PlSense related to compiling libraries")
+  "Ignore errors from PlSense related to compiling libraries and imported modules.")
 (defcustom company-plsense-config-path "~/.plsense"
   "The location of the plsense config file. Run 'plsense' from the shell to generate this file.")
 (defcustom company-plsense-braces-autopaired t
@@ -178,6 +178,14 @@ wrapper for `company-plsense--sync-request' that does some post processing. "
   (interactive)
   (message (company-plsense--server-query "serverstatus" 10)))
 
+(defun company-plsense-buffer-ready ()
+  "Return the ready status of the buffer.
+ Reply 'Yes' i buffer is ready, 'No' if it has not been loaded, and 'Not Found'
+ if either the file could not be found or the file failed to compile cleanly."
+  (interactive)
+  (message (company-plsense--server-query
+            (concat "ready " (buffer-file-name (current-buffer))) 10)))
+
 (defun company-plsense-server-command (str)
   "Run an arbitrary command on the PlSense server synchronously."
   (interactive "Mcommand: ")
@@ -269,8 +277,7 @@ resync with the server on the next query."
 (defun company-plsense-update-location ()
   "set the current file, module, and function for the server."
   (interactive)
-  (when (called-interactively-p)
-    (company-plsense--reset-location))
+  (company-plsense--reset-location)
   (company-plsense--update-package-and-file)
   (company-plsense--update-function))
 
@@ -344,7 +351,7 @@ resync with the server on the next query."
                 (backward-char)
                 (beginning-of-line-text)
                 (forward-char)
-                (push (cons sub-name (cons start (point))) company-plsense--function-list))
+                (add-to-list 'company-plsense--function-list (cons sub-name (cons start (point)))))
             (setq done-parsing-p t)))))))
 
 (defun company-plsense--get-current-scope (list)
@@ -381,26 +388,34 @@ resync with the server on the next query."
 incudes variable type identifiers like $ @ %."
   (when (memq major-mode company-plsense-enabled-modes)
     (company-plsense--update-package-and-file)
-    (unless (nth 4 (syntax-ppss))
-      (--if-let (when (and (or (looking-back "[$@%&:[:alpha:]_{([]" (- (point) 1))
-                               (looking-back "\\(?:->\\|{^\\|$^\\)" (- (point) 2)))
-                       (not (looking-at "[[:alnum:]_^]")))
-                  (save-match-data
-                    (let ((line (buffer-substring-no-properties
-                                 (line-beginning-position)
-                                 (point))))
-                      (if (string-match "\\(?:[$@%]{?^?\\|[[:alpha:]_]\\)[[:alnum:]_:]*\\'" line)
-                          (match-string 0 line)
-                        ""))))
-          (if (looking-back "[>&:{([].*" (- (point) company-minimum-prefix-length))
-              (cons it t)
-            it)
-        'stop))))
+    (unless (nth 4 (syntax-ppss)) ;; don't complete in comments
+      (let ((line (buffer-substring-no-properties
+                   (line-beginning-position)
+                   (point))))
+        (unless (and (nth 3 (syntax-ppss)) ;; don't complete non symbols in strings
+                     (not (s-matches? "\\_<qw[{(]" line))
+                     (s-matches? "\\(?:\\s-\\|'\\|\"\\|^\\)[[:alnum:]]+\\'" line))
+          (--if-let (when (and (or (looking-back "[$@%&:[:alpha:]_{([]" (- (point) 1))
+                                   (looking-back "\\(?:->\\|{^\\|$^\\)" (- (point) 2)))
+                               (not (looking-at "[[:alnum:]_^]")))
+                      (save-match-data
+                        (if (string-match "\\(?:[$@%]{?^?\\|[[:alpha:]_]\\)[[:alnum:]_:]*\\'" line)
+                            (match-string 0 line)
+                          "")))
+              (if (looking-back "[>&:{([].*" (- (point) company-minimum-prefix-length))
+                  (cons it t)
+                it)
+            'stop))))))
 
 (defun company-plsense--candidates (callback prefix)
   "Asyncrounously grab a list for completion candidates from the PlSense server."
   (company-plsense--update-function)
-  (let ((static-prefix (replace-regexp-in-string "[^$@%]*\\'" "" prefix))
+  (let ((static-prefix (replace-regexp-in-string
+                        "[^$@%]*\\'"
+                        ""
+                        (if (listp prefix)
+                            (car prefix)
+                          prefix)))
         (buffer (current-buffer))
         (line (buffer-substring-no-properties
                (line-beginning-position)
@@ -460,7 +475,7 @@ to a tcp server on another machine."
     tq))
 
 (defun company-plsense--tq-filter (tq string)
-  "Append STRING to the COMPANY-PLSENSE--TQ's buffer; then process the new data."
+  "Append STRING to the TQ's buffer; then process the new data."
   (let ((buffer (tq-buffer tq))
         (reply (company-plsense--handle-errors string)))
     (when (buffer-live-p buffer)
@@ -490,22 +505,36 @@ to a tcp server on another machine."
                   (tq-queue-pop tq))
                 (company-plsense--tq-process-buffer tq))))))))
 
+(defun company-plsense--post-error (error)
+  "Echo error in message area and add it to
+error buffer."
+  (setq company-plsense--last-error error)
+  (message "company-plsense: server %s" error)
+  (with-current-buffer (get-buffer-create "*company-plsense-errors*")
+    (goto-char (point-max))
+    (insert error)))
+
 (defun company-plsense--handle-errors (msg)
   "Handle errors from the PlSense server. Currently will
 display all errors unless compile errors are ignored."
-  (let ((error-re "\\(FATAL\\|ERROR\\): .*\n"))
+  (let ((error-re "\\(?:FATAL\\|ERROR\\): .*\n"))
     (save-match-data
       (let ((pos 0))
         (while (string-match error-re msg pos)
           (let ((error (match-string 0 msg)))
-            (unless (and company-plsense-ignore-compile-errors
-                         (string-prefix-p "ERROR: Failed compile" error))
-              (unless (s-equals? company-plsense--last-error error)
-                (setq company-plsense--last-error error)
-                (message "company-plsense: server %s" error))
-              (with-current-buffer (get-buffer-create "*company-plsense-errors*")
-                (goto-char (point-max))
-                (insert error))))
+            (cond
+             ((s-prefix? "ERROR: Not yet set current" error)
+              (company-plsense-update-location))
+             ((s-prefix? "ERROR: Not yet exist" error)
+              (if (s-equals? company-plsense--current-file (nth 1 (s-match "\\[\\(.*\\)\\]$" error)))
+                  (company-plsense--open-file company-plsense--current-file)
+                (company-plsense-update-location)))
+             ((s-prefix? "ERROR: Failed compile" error)
+              (when (or (not company-plsense-ignore-compile-errors)
+                        (memq (nth 1 (s-match "'\\(.*\\)'$" error)) company-plsense--opened-files))
+                (company-plsense--post-error error)))
+             ((not (s-equals? company-plsense--last-error error))
+              (company-plsense--post-error error))))
           (setq pos (match-end 0)))))
     (replace-regexp-in-string error-re "" msg)))
 
