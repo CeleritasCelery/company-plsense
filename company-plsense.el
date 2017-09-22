@@ -109,7 +109,7 @@ Every file needs to be opened before it can provide completion candidates.")
   "Post a asynchronous command to the PlSense server. This is higher level
 wrapper for `company-plsense--async-request' that does some post processing. "
   (unless (or company-plsense--server-started-p
-           (company-plsense--process-running-p))
+              (company-plsense--process-running-p))
     (company-plsense--start-process))
   (company-plsense--async-request cmd (if callback
                                           (lambda (x resp)
@@ -433,7 +433,7 @@ incudes variable type identifiers like $ @ %."
   "Return the perldoc info for the candidate."
   (company-doc-buffer
    (company-plsense--server-query
-    (concat "assisthelp " (s-chop-prefixes '("$" "@ " "%") candidate)))))
+    (concat "assisthelp " (s-chop-prefixes '("$" "@" "%") candidate)))))
 
 ;;;###autoload
 (defun company-plsense (command &optional arg &rest ignored)
