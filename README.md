@@ -55,23 +55,17 @@ be locatable in either `@INC` or `$PERL5LIB`. If you have a project specific
 library use PlSense's [ProjectInfoFile](https://github.com/aki2o/plsense/wiki/Library#projectmodule).
 
 ## How do I resolve server problems?
-1. If you see the error `FATAL: Can't create socket : Address already in use`
-   make sure there are no instances of `plsense` already running on your machine.
-   Once you have killed any rouge `plsense` processes restart the server with the
-   command `company-plsense-restart-server`. By default `plsense` will use ports
-   33333, 33334, and 33335. If these ports are not available, specify alternate
-   ones in the PlSense [config file](https://github.com/aki2o/plsense/wiki/Config).
-2. Run `company-plsense-executable-version` to verify Emacs can find the executable.
-3. The command `company-plsense-server-status` will show the current status of
+1. Run `company-plsense-executable-version` to verify Emacs can find the executable.
+2. The command `company-plsense-server-status` will show the current status of
    the servers. In order to work, all three servers (Main, Work, and Resolve)
-   need to be running. If not, restart the server with
-   `company-plsense-restart-server`.
-4. If all the servers are running but completion candidates are still not being
+   need to be running. If not, start the server with
+   `company-plsense-start-server`.
+3. If all the servers are running but completion candidates are still not being
    generated, use the command `company-plsense-buffer-ready`. If the buffer
    failed to compile cleanly it will return "Not Found", in which case you will
    need to run `perl -c` on the file to see what the problem is. If the reply is
    "Yes" that means the file loaded properly.
-5. If `company-plsense` is still not working, open an issue in the issue tracker.
+4. If `company-plsense` is still not working, open an issue in the issue tracker.
 
 ## Limitations
 

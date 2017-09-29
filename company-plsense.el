@@ -62,11 +62,11 @@
   "Modified transaction queue to keep all server commands")
 (defvar company-plsense--process nil
   "Lisp object for the PlSense server")
-(defvar company-plsense--server-started-p nil
-  "Whether or not the server is has been started")
 
 (defvar company-plsense--current-file ""
   "The file the user is currently working in")
+(defvar company-plsense--opening-file ""
+  "The file the server is currently trying to open")
 (defvar company-plsense--current-package ""
   "The package the user is currently working in")
 (defvar company-plsense--current-function ""
@@ -89,7 +89,7 @@ This list has the same form as `company-plsense--function-list' above.")
   "A list of all files that have been opened this session.
 Every file needs to be opened before it can provide completion candidates.")
 
-(defvar company-plsense--done-re "\\`Done\\'"
+(defvar company-plsense--done-re "Done"
   "Regular expression matching a done repsonse from the server.")
 (defvar company-plsense--package-re (rx-to-string `(and bol (* space) "package" (+ space) (group (+ (any "a-zA-Z0-9:_"))) (* space) ";"))
   "Regular expression matching a package name.")
@@ -108,8 +108,7 @@ Every file needs to be opened before it can provide completion candidates.")
 (defun company-plsense--server-request (cmd &optional callback)
   "Post a asynchronous command to the PlSense server. This is higher level
 wrapper for `company-plsense--async-request' that does some post processing. "
-  (unless (or company-plsense--server-started-p
-              (company-plsense--process-running-p))
+  (unless (company-plsense--process-running-p)
     (company-plsense--start-process))
   (company-plsense--async-request cmd (if callback
                                           (lambda (x resp)
@@ -119,8 +118,7 @@ wrapper for `company-plsense--async-request' that does some post processing. "
 (defun company-plsense--server-query (cmd &optional timeout)
   "Post a synchronous command to the PlSense server. This is higher level
 wrapper for `company-plsense--sync-request' that does some post processing. "
-  (unless (or company-plsense--server-started-p
-              (company-plsense--process-running-p))
+  (unless (company-plsense--process-running-p)
     (company-plsense--start-process))
   (company-plsense--sync-request cmd timeout))
 
@@ -204,35 +202,39 @@ completion candidates. Every file must be loaded once per session."
               (add-to-list 'company-plsense--opened-files file)
               (setq company-plsense--current-file file)
               (setq company-plsense--current-package "main")
-              (setq company-plsense--current-function "")))))))
+              (setq company-plsense--current-function ""))
+            (setq company-plsense--opening-file ""))))))
 
 (defun company-plsense--kill-process ()
   "force kill the PlSense server."
   (company-plsense--reset-location)
   (setq company-plsense--opened-files '())
-  (setq company-plsense--server-started-p nil)
   (setq company-plsense--last-error "")
   (tq-close company-plsense--queue))
 
 (defun company-plsense-start-server ()
-  "Start the PlSense server."
+  "Start the PlSense server if it is not already running."
   (interactive)
   (message "Starting plsense server...")
   (company-plsense--server-request
-   "serverstart"
+   "serverstatus"
    (lambda (resp)
-     (setq company-plsense--server-started-p t)
-     (setq company-plsense--opened-files '())
-     (company-plsense--reset-location)
-     (when (string-match company-plsense--done-re resp)
-       (message "plsense server started")))))
+     (if (< 0 (s-count-matches "Not" resp))
+         (company-plsense--server-request
+          "serverstart"
+          (lambda (resp)
+            (setq company-plsense--opened-files '())
+            (company-plsense--reset-location)
+            (when (string-match company-plsense--done-re resp)
+              (message "plsense server started"))))
+       (message "plsense server already running")))))
 
 (defun company-plsense-stop-server ()
   "Attempt to stop the PlSense server. If it takes longer
-then 3 seconds, force kill it."
+then 5 seconds, force kill it."
   (interactive)
   (message "Stopping plsense server...")
-  (company-plsense--sync-request "serverstop" 3)
+  (company-plsense--sync-request "serverstop" 5)
   (company-plsense--kill-process)
   (message "plsense server stopped"))
 
@@ -241,7 +243,7 @@ then 3 seconds, force kill it."
 server failed to start or when `company-plsense-server-status'
 reveals that not all work servers are running."
   (interactive)
-  (company-plsense--kill-process)
+  (company-plsense-stop-server)
   (sleep-for 1)
   (company-plsense-start-server))
 
@@ -252,15 +254,18 @@ reveals that not all work servers are running."
   "Update causes PlSense to reanalyze the given file."
   (company-plsense--get-function-scopes)
   (company-plsense--get-package-scopes)
-  (company-plsense--server-request
-   (concat "update " (buffer-file-name (current-buffer)))))
+  (let ((file (buffer-file-name (current-buffer))))
+    (if (-contains? company-plsense--opened-files file)
+        (company-plsense--server-request
+         (concat "update " file))
+      (company-plsense--open-file file))))
 
 (defun company-plsense-setup ()
   "Setup the default company-plsense configuration.
 This will start the server and enable `company-mode'
 with the appropriate major modes."
   (interactive)
-  (unless company-plsense--server-started-p (company-plsense-start-server))
+  (company-plsense-start-server)
   (make-variable-buffer-local 'company-plsense--function-list)
   (make-variable-buffer-local 'company-plsense--package-list)
   (--each company-plsense-enabled-modes
@@ -284,13 +289,14 @@ resync with the server on the next query."
 (defun company-plsense--update-package-and-file ()
   "Sync the current package and file with the PlSense server."
   (let ((file (buffer-file-name (current-buffer))))
-    (unless (s-equals? company-plsense--current-file file)
-      (if (memq file company-plsense--opened-files)
+    (unless (or (s-equals? company-plsense--current-file file)
+                (s-equals? company-plsense--opening-file file))
+      (if (-contains? company-plsense--opened-files file)
           (company-plsense--server-request (concat "onfile " file))
         (company-plsense--open-file file))
       (setq company-plsense--current-package "main")
       (setq company-plsense--current-function "")
-      (setq company-plsense--current-file file)))
+      (setq company-plsense--opening-file file)))
   (let ((pkg (company-plsense--get-current-scope company-plsense--package-list)))
     (unless (s-equals? pkg company-plsense--current-package)
       (company-plsense--server-request (concat "onmod " pkg))
@@ -376,7 +382,7 @@ resync with the server on the next query."
 (defun company-plsense-init ()
   "Setup the current buffer for use by company-plsense."
   (interactive)
-  (when (memq major-mode company-plsense-enabled-modes)
+  (when (-contains? company-plsense-enabled-modes major-mode)
     (company-plsense--get-function-scopes)
     (company-plsense--get-package-scopes)
     (company-plsense--open-file (buffer-file-name (current-buffer)))
@@ -386,7 +392,7 @@ resync with the server on the next query."
 (defun company-plsense--prefix ()
   "Grab prefix at point.
 incudes variable type identifiers like $ @ %."
-  (when (memq major-mode company-plsense-enabled-modes)
+  (when (-contains? company-plsense-enabled-modes major-mode)
     (company-plsense--update-package-and-file)
     (unless (nth 4 (syntax-ppss)) ;; don't complete in comments
       (let ((line (buffer-substring-no-properties
@@ -506,8 +512,7 @@ to a tcp server on another machine."
                 (company-plsense--tq-process-buffer tq))))))))
 
 (defun company-plsense--post-error (error)
-  "Echo error in message area and add it to
-error buffer."
+  "Echo error in message area and add it to error buffer."
   (setq company-plsense--last-error error)
   (message "company-plsense: server %s" error)
   (with-current-buffer (get-buffer-create "*company-plsense-errors*")
@@ -531,7 +536,7 @@ display all errors unless compile errors are ignored."
                 (company-plsense-update-location)))
              ((s-prefix? "ERROR: Failed compile" error)
               (when (or (not company-plsense-ignore-compile-errors)
-                        (memq (nth 1 (s-match "'\\(.*\\)'$" error)) company-plsense--opened-files))
+                        (-contains? company-plsense--opened-files (nth 1 (s-match "'\\(.*\\)'$" error))))
                 (company-plsense--post-error error)))
              ((not (s-equals? company-plsense--last-error error))
               (company-plsense--post-error error))))
