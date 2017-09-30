@@ -1,6 +1,11 @@
 ;;; company-plsense.el --- Company backend for Perl -*- lexical-binding:t -*-
 
+;; Copyright (C) 2017 by Troy Hinckley
+
 ;; Author: Troy Hinckley <troy.hinckley@gmail.com>
+;; URL: https://github.com/CeleritasCelery/company-plsense
+;; Version: 0.1.0
+;; Package-Requires: ((company "0.9.3") (dash "2.13.0") (s "1.12") (emacs "24"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -41,41 +46,50 @@
 
 
 ;;; Customizable variables
+(defgroup company-plsense nil
+  "company mode backend for perl5"
+  :prefix "company-plsense-"
+  :group 'company-plsense
+  :link '(url-link :tag "Github" "https://github.com/CeleritasCelery/company-plsense"))
 
 (defcustom company-plsense-executable "plsense"
-  "The location of the PlSense executable. Default is to search for it on $PATH")
+  "The location of the PlSense executable. Default is to search for it on $PATH."
+  :group 'company-plsense)
 (defcustom company-plsense-ignore-compile-errors t
-  "Ignore errors from PlSense related to compiling libraries and imported modules.")
+  "Ignore errors from PlSense related to compiling libraries and imported modules."
+  :group 'company-plsense)
 (defcustom company-plsense-config-path "~/.plsense"
-  "The location of the plsense config file. Run 'plsense' from the shell to generate this file.")
+  "The location of the plsense config file. Run 'plsense' from the shell to generate this file."
+  :group 'company-plsense)
 (defcustom company-plsense-braces-autopaired t
-  "Whether or not to assume that braces are auto-paired")
+  "Whether or not to assume that braces are auto-paired."
+  :group 'company-plsense)
 (defcustom company-plsense-enabled-modes '(cperl-mode perl-mode)
-  "Major modes that will use plsense")
+  "Major modes that will use plsense."
+  :group 'company-plsense)
 
 
 ;;; State variables
 (defvar company-plsense--last-error ""
-  "Used to keep track of the last error from
- the plsese server so that we don't spam error messages.")
+  "Used to keep track of the last error from the plsese server so that we don't spam error messages.")
 (defvar company-plsense--queue nil
-  "Modified transaction queue to keep all server commands")
+  "Modified transaction queue to keep all server commands.")
 (defvar company-plsense--process nil
-  "Lisp object for the PlSense server")
+  "Lisp object for the PlSense server.")
 
 (defvar company-plsense--current-file ""
-  "The file the user is currently working in")
+  "The file the user is currently working in.")
 (defvar company-plsense--opening-file ""
-  "The file the server is currently trying to open")
+  "The file the server is currently trying to open.")
 (defvar company-plsense--current-package ""
-  "The package the user is currently working in")
+  "The package the user is currently working in.")
 (defvar company-plsense--current-function ""
-  "The function the user is currently working in")
+  "The function the user is currently working in.")
 
 (defvar company-plsense--function-list '()
   "A list of all the functions in current file that PlSense knows about.
 This list has the form:
-((function_foo 588 . 640)
+\((function_foo 588 . 640)
  (function_bar 557 . 587)
  (function_baz 605 . 630))
 where the first item is the name of the function and the cons pair
@@ -94,40 +108,45 @@ Every file needs to be opened before it can provide completion candidates.")
 (defvar company-plsense--package-re (rx-to-string `(and bol (* space) "package" (+ space) (group (+ (any "a-zA-Z0-9:_"))) (* space) ";"))
   "Regular expression matching a package name.")
 (defvar company-plsense--sub-re (rx-to-string `(and bol (* space) "sub" (+ space) (group (+ (any "a-zA-Z0-9_")))))
-  "regular expression matching a function name.")
+  "Regular expression matching a function name.")
+
+(make-variable-buffer-local 'company-plsense--function-list)
+(make-variable-buffer-local 'company-plsense--package-list)
 
 
 ;;; Server interface commands
 
 (defun company-plsense--process-running-p ()
-  "Returns t if the there is an active PlSense process running, else nil"
+  "Return t if the there is an active PlSense process running, else nil."
   (and (processp company-plsense--process)
        (eq (process-status (process-name company-plsense--process)) 'run)
        company-plsense--queue))
 
 (defun company-plsense--server-request (cmd &optional callback)
-  "Post a asynchronous command to the PlSense server. This is higher level
-wrapper for `company-plsense--async-request' that does some post processing. "
+  "Post a asynchronous CMD to the PlSense server.
+This is higher level wrapper for `company-plsense--async-request'
+that does some post processing and returns CALLBACK."
   (unless (company-plsense--process-running-p)
     (company-plsense--start-process))
   (company-plsense--async-request cmd (if callback
-                                          (lambda (x resp)
+                                          (lambda (_closure resp)
                                             (funcall callback (replace-regexp-in-string "\n?>\\s-\\'" "" resp)))
                                         nil)))
 
 (defun company-plsense--server-query (cmd &optional timeout)
-  "Post a synchronous command to the PlSense server. This is higher level
-wrapper for `company-plsense--sync-request' that does some post processing. "
+  "Post a synchronous CMD to the PlSense server.
+This is higher level wrapper for `company-plsense--sync-request'
+that does some post processing before TIMEOUT."
   (unless (company-plsense--process-running-p)
     (company-plsense--start-process))
   (company-plsense--sync-request cmd timeout))
 
 (defun company-plsense--async-request (cmd callback)
-  "Post a asynchronous command to the PlSense server."
+  "Post a asynchronous CMD to the PlSense server and call CALLBACK."
   (tq-enqueue company-plsense--queue (if cmd (concat cmd "\n") "") ">\\s-\\'" nil callback t))
 
 (defun company-plsense--sync-request (cmd &optional timeout)
-  "Post a synchronous command to the PlSense server."
+  "Post a synchronous CMD to the PlSense server with TIMEOUT."
   (let ((done nil)
         (reply "")
         (limit (if timeout (* 5 timeout) 25))
@@ -136,7 +155,7 @@ wrapper for `company-plsense--sync-request' that does some post processing. "
                 (if cmd (concat cmd "\n") "")
                 ">\\s-\\'"
                 nil
-                (lambda (x resp)
+                (lambda (_closure resp)
                   (setq reply resp)
                   (setq done t))
                 t)
@@ -172,26 +191,26 @@ wrapper for `company-plsense--sync-request' that does some post processing. "
   (message (shell-command-to-string (concat company-plsense-executable " --version"))))
 
 (defun company-plsense-server-status ()
-  "Show the PlSense server status"
+  "Show the PlSense server status."
   (interactive)
   (message (company-plsense--server-query "serverstatus" 10)))
 
 (defun company-plsense-buffer-ready ()
   "Return the ready status of the buffer.
- Reply 'Yes' i buffer is ready, 'No' if it has not been loaded, and 'Not Found'
+Reply 'Yes' i buffer is ready, 'No' if it has not been loaded, and 'Not Found'
  if either the file could not be found or the file failed to compile cleanly."
   (interactive)
   (message (company-plsense--server-query
             (concat "ready " (buffer-file-name (current-buffer))) 10)))
 
-(defun company-plsense-server-command (str)
-  "Run an arbitrary command on the PlSense server synchronously."
+(defun company-plsense-server-command (cmd)
+  "Run an arbitrary CMD on the PlSense server synchronously."
   (interactive "Mcommand: ")
-  (message (company-plsense--server-query str)))
+  (message (company-plsense--server-query cmd)))
 
 (defun company-plsense--open-file (file)
-  "Opening causes PlSense to load a file and use it for
-completion candidates. Every file must be loaded once per session."
+  "Opening causes PlSense to load FILE and use it for completion candidates.
+Every file must be loaded once per session."
   (when (and
          (file-exists-p file)
          (not (file-directory-p file))
@@ -206,7 +225,7 @@ completion candidates. Every file must be loaded once per session."
             (setq company-plsense--opening-file ""))))))
 
 (defun company-plsense--kill-process ()
-  "force kill the PlSense server."
+  "Force kill the PlSense server."
   (company-plsense--reset-location)
   (setq company-plsense--opened-files '())
   (setq company-plsense--last-error "")
@@ -230,8 +249,8 @@ completion candidates. Every file must be loaded once per session."
        (message "plsense server already running")))))
 
 (defun company-plsense-stop-server ()
-  "Attempt to stop the PlSense server. If it takes longer
-then 5 seconds, force kill it."
+  "Attempt to stop the PlSense server.
+If it takes longer then 5 seconds, force kill it."
   (interactive)
   (message "Stopping plsense server...")
   (company-plsense--sync-request "serverstop" 5)
@@ -239,8 +258,9 @@ then 5 seconds, force kill it."
   (message "plsense server stopped"))
 
 (defun company-plsense-restart-server ()
-  "Restart PlSense server. Use this command when either the
-server failed to start or when `company-plsense-server-status'
+  "Restart PlSense server.
+Use this command when either the server failed
+to start or when `company-plsense-server-status'
 reveals that not all work servers are running."
   (interactive)
   (company-plsense-stop-server)
@@ -261,26 +281,23 @@ reveals that not all work servers are running."
       (company-plsense--open-file file))))
 
 (defun company-plsense-setup ()
-  "Setup the default company-plsense configuration.
-This will start the server and enable `company-mode'
+  "Setup the default ‘company-plsense’ configuration.
+This will start the server and enable command `company-mode'
 with the appropriate major modes."
   (interactive)
   (company-plsense-start-server)
-  (make-variable-buffer-local 'company-plsense--function-list)
-  (make-variable-buffer-local 'company-plsense--package-list)
   (--each company-plsense-enabled-modes
     (add-hook (intern-soft (concat (symbol-name it) "-hook")) 'company-mode))
   (add-to-list 'company-backends 'company-plsense))
 
 (defun company-plsense--reset-location ()
-  "Rest all location variables so that company-plsense will
-resync with the server on the next query."
+  "Rest all location variables so that ‘company-plsense’ will resync with the server on the next query."
   (setq company-plsense--current-file nil)
   (setq company-plsense--current-package nil)
   (setq company-plsense--current-function nil))
 
 (defun company-plsense-update-location ()
-  "set the current file, module, and function for the server."
+  "Set the current file, module, and function for the server."
   (interactive)
   (company-plsense--reset-location)
   (company-plsense--update-package-and-file)
@@ -310,7 +327,8 @@ resync with the server on the next query."
       (setq company-plsense--current-function func))))
 
 (defun company-plsense--update-scopes (list change-start size)
-  "adjusts the boundaries for a list of scopes (packages or functions)"
+  "Adjusts the boundaries for a LIST of scopes (packages or functions).
+Move all points if they are after CHANGE-START by SIZE."
   (dolist (sub list)
     (let ((start (cadr sub))
           (end (cddr sub)))
@@ -361,7 +379,7 @@ resync with the server on the next query."
             (setq done-parsing-p t)))))))
 
 (defun company-plsense--get-current-scope (list)
-  "Return the name of the scope `point' is currently in."
+  "Return the name of the scope LIST `point' is currently in."
   (--if-let
       (--first (and (> (point) (cadr it))
                     (<= (point) (cddr it)))
@@ -370,8 +388,9 @@ resync with the server on the next query."
     ""))
 
 (defun company-plsense--handle-change (beg end len)
-  "Hanlder for `after-change-functions' which updates all
- current file scope locations. (packages and functions)"
+  "Hanlder for `after-change-functions' which update all scopes.
+BEG and END are locations of the change with LEN the size of the
+previous TEXT."
   (let ((size (- end beg len)))
     (dolist (scope (list company-plsense--function-list company-plsense--package-list))
       (company-plsense--update-scopes scope beg size))))
@@ -380,7 +399,7 @@ resync with the server on the next query."
 ;;; Hanlders for company-plense backend
 
 (defun company-plsense-init ()
-  "Setup the current buffer for use by company-plsense."
+  "Setup the current buffer for use by ‘company-plsense’."
   (interactive)
   (when (-contains? company-plsense-enabled-modes major-mode)
     (company-plsense--get-function-scopes)
@@ -414,7 +433,8 @@ incudes variable type identifiers like $ @ %."
             'stop))))))
 
 (defun company-plsense--candidates (callback prefix)
-  "Asyncrounously grab a list for completion candidates from the PlSense server."
+  "Asyncrounously grab a list for completion candidates from the PlSense server.
+Return CALLBACK containing the candidates based on PREFIX."
   (company-plsense--update-function)
   (let ((static-prefix (replace-regexp-in-string
                         "[^$@%]*\\'"
@@ -436,7 +456,7 @@ incudes variable type identifiers like $ @ %."
                  (s-split "\n" resp t))))))))
 
 (defun company-plsense--doc-buffer (candidate)
-  "Return the perldoc info for the candidate."
+  "Return the perldoc info for the CANDIDATE."
   (company-doc-buffer
    (company-plsense--server-query
     (concat "assisthelp " (s-chop-prefixes '("$" "@" "%") candidate)))))
@@ -491,7 +511,7 @@ to a tcp server on another machine."
         (company-plsense--tq-process-buffer tq)))))
 
 (defun company-plsense--tq-process-buffer (tq)
-  "Check COMPANY-PLSENSE--TQ's buffer for the regexp at the head of the queue."
+  "Check TQ's buffer for the regexp at the head of the queue."
   (let ((buffer (tq-buffer tq)))
     (when (buffer-live-p buffer)
       (set-buffer buffer)
@@ -512,7 +532,7 @@ to a tcp server on another machine."
                 (company-plsense--tq-process-buffer tq))))))))
 
 (defun company-plsense--post-error (error)
-  "Echo error in message area and add it to error buffer."
+  "Echo ERROR in message area and add it to error buffer."
   (setq company-plsense--last-error error)
   (message "company-plsense: server %s" error)
   (with-current-buffer (get-buffer-create "*company-plsense-errors*")
@@ -520,8 +540,7 @@ to a tcp server on another machine."
     (insert error)))
 
 (defun company-plsense--handle-errors (msg)
-  "Handle errors from the PlSense server. Currently will
-display all errors unless compile errors are ignored."
+  "Handle errors from the PlSense server in MSG."
   (let ((error-re "\\(?:FATAL\\|ERROR\\): .*\n"))
     (save-match-data
       (let ((pos 0))
@@ -544,3 +563,5 @@ display all errors unless compile errors are ignored."
     (replace-regexp-in-string error-re "" msg)))
 
 (provide 'company-plsense)
+
+;;; company-plsense.el ends here
