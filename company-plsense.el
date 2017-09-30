@@ -1,6 +1,11 @@
 ;;; company-plsense.el --- Company backend for Perl -*- lexical-binding:t -*-
 
+;; Copyright (C) 2017 by Troy Hinckley
+
 ;; Author: Troy Hinckley <troy.hinckley@gmail.com>
+;; URL: https://github.com/CeleritasCelery/company-plsense
+;; Version: 0.1.0
+;; Package-Requires: ((company "0.9.3") (dash "2.13.0") (s "1.12") (emacs "24"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -544,3 +549,5 @@ display all errors unless compile errors are ignored."
     (replace-regexp-in-string error-re "" msg)))
 
 (provide 'company-plsense)
+
+;;; company-plsense.el ends here
