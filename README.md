@@ -1,15 +1,21 @@
-# company-plsense 
+# company-plsense
+[![MELPA](https://melpa.org/packages/company-plsense-badge.svg)](https://melpa.org/#/company-plsense)
 
 company-mode completion back-end for Perl using [Plsense](https://github.com/aki2o/plsense).
 
 ## Installation
 
-clone this repo then add the following to your `.emacs` 
+You can install this package from [Melpa](http://melpa.milkbox.net/)
 ```lisp
-(add-to-list 'load-path "~/path/to/company-plsense")
-(require 'company-plsense)
-(company-plsense-setup)
+M-x package-install RET company-plsense RET
+```
 
+## Usage
+once installed add the following to your `.emacs`
+```lisp
+(add-to-list 'company-backends 'company-plsense)
+(add-hook 'perl-mode-hook 'company-mode)
+(add-hook 'cperl-mode-hook 'company-mode)
 ```
 
 ## Features
@@ -21,7 +27,6 @@ clone this repo then add the following to your `.emacs`
 - Class Initializers
 - LIST of Use/Require statements
 - Key of Hashes
-
 
 ### use `company-doc-buffer` to view perldoc and other information
 

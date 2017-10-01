@@ -60,8 +60,6 @@
   "The location of the plsense config file. Run 'plsense' from the shell to generate this file.")
 (defcustom company-plsense-braces-autopaired t
   "Whether or not to assume that braces are auto-paired.")
-(defcustom company-plsense-enabled-modes '(cperl-mode perl-mode)
-  "Major modes that will use plsense.")
 
 
 ;;; State variables
@@ -71,6 +69,10 @@
   "Modified transaction queue to keep all server commands.")
 (defvar company-plsense--process nil
   "Lisp object for the PlSense server.")
+(defvar company-plsense--server-started-p nil
+  "Server started predicate.")
+(defvar company-plsense-enabled-modes '(cperl-mode perl-mode)
+  "Major modes that will use plsense.")
 
 (defvar company-plsense--current-file ""
   "The file the user is currently working in.")
@@ -275,12 +277,12 @@ reveals that not all work servers are running."
          (concat "update " file))
       (company-plsense--open-file file))))
 
+;;;###autoload
 (defun company-plsense-setup ()
   "Setup the default ‘company-plsense’ configuration.
 This will start the server and enable command `company-mode'
 with the appropriate major modes."
   (interactive)
-  (company-plsense-start-server)
   (--each company-plsense-enabled-modes
     (add-hook (intern-soft (concat (symbol-name it) "-hook")) 'company-mode))
   (add-to-list 'company-backends 'company-plsense))
@@ -397,6 +399,9 @@ previous TEXT."
   "Setup the current buffer for use by ‘company-plsense’."
   (interactive)
   (when (-contains? company-plsense-enabled-modes major-mode)
+    (unless company-plsense--server-started-p
+      (setq company-plsense--server-started-p t)
+      (company-plsense-start-server))
     (company-plsense--get-function-scopes)
     (company-plsense--get-package-scopes)
     (company-plsense--open-file (buffer-file-name (current-buffer)))
