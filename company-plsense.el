@@ -5,7 +5,7 @@
 ;; Author: Troy Hinckley <troy.hinckley@gmail.com>
 ;; URL: https://github.com/CeleritasCelery/company-plsense
 ;; Version: 0.1.0
-;; Package-Requires: ((company "0.9.3") (dash "2.13.0") (s "1.12") (emacs "24"))
+;; Package-Requires: ((company "0.9.3") (cl-lib "0.5.0") (dash "2.12.0") (s "1.12") (emacs "24"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -47,26 +47,21 @@
 
 ;;; Customizable variables
 (defgroup company-plsense nil
-  "company mode backend for perl5"
+  "company back-end for perl5"
   :prefix "company-plsense-"
-  :group 'company-plsense
+  :group 'programming
   :link '(url-link :tag "Github" "https://github.com/CeleritasCelery/company-plsense"))
 
 (defcustom company-plsense-executable "plsense"
-  "The location of the PlSense executable. Default is to search for it on $PATH."
-  :group 'company-plsense)
+  "The location of the PlSense executable. Default is to search for it on $PATH.")
 (defcustom company-plsense-ignore-compile-errors t
-  "Ignore errors from PlSense related to compiling libraries and imported modules."
-  :group 'company-plsense)
+  "Ignore errors from PlSense related to compiling libraries and imported modules.")
 (defcustom company-plsense-config-path "~/.plsense"
-  "The location of the plsense config file. Run 'plsense' from the shell to generate this file."
-  :group 'company-plsense)
+  "The location of the plsense config file. Run 'plsense' from the shell to generate this file.")
 (defcustom company-plsense-braces-autopaired t
-  "Whether or not to assume that braces are auto-paired."
-  :group 'company-plsense)
+  "Whether or not to assume that braces are auto-paired.")
 (defcustom company-plsense-enabled-modes '(cperl-mode perl-mode)
-  "Major modes that will use plsense."
-  :group 'company-plsense)
+  "Major modes that will use plsense.")
 
 
 ;;; State variables
