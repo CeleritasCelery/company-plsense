@@ -368,7 +368,7 @@ Move all points if they are after CHANGE-START by SIZE."
                                                (buffer-substring-no-properties
                                                 start
                                                 (line-end-position))))))
-                (end-of-defun)
+                (ignore-errors (end-of-defun))
                 (backward-char)
                 (beginning-of-line-text)
                 (forward-char)

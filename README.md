@@ -74,6 +74,9 @@ library use PlSense's [ProjectInfoFile](https://github.com/aki2o/plsense/wiki/Li
 
 ## Limitations
 
+### No Perl6 support
+PlSense only supports Perl5.
+
 ### Tied to a file
 `company-plsense` can only provide completion candidates for buffers tied to files.
 
