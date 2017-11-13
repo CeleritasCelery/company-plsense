@@ -40,6 +40,7 @@
 
 (require 'company) ; company fontend
 (require 'cl-lib)  ; `cl-case'
+(require 'cl)      ; `incf' alias
 (require 'tq)      ; transcation queues. Note modifications below
 (require 'dash)    ; List manipulation library
 (require 's)       ; String manipulation library
