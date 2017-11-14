@@ -158,7 +158,7 @@ that does some post processing before TIMEOUT."
                 t)
     (while (and (< counter limit) (not done))
       (accept-process-output company-plsense--process 0.2 nil t)
-      (incf counter))
+      (cl-incf counter))
     (if done
         (replace-regexp-in-string "\n?>\\s-\\'" "" reply)
       (setcar company-plsense--queue nil))))
