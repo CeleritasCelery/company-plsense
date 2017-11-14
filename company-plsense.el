@@ -1,6 +1,7 @@
 ;;; company-plsense.el --- Company backend for Perl -*- lexical-binding:t -*-
 
-;; Copyright (C) 2017 by Troy Hinckle
+;; Copyright (C) 2017 by Troy Hinckley
+
 ;; Author: Troy Hinckley <troy.hinckley@gmail.com>
 ;; URL: https://github.com/CeleritasCelery/company-plsense
 ;; Version: 0.1.0
