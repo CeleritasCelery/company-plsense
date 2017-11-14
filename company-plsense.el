@@ -1,7 +1,6 @@
 ;;; company-plsense.el --- Company backend for Perl -*- lexical-binding:t -*-
 
-;; Copyright (C) 2017 by Troy Hinckley
-
+;; Copyright (C) 2017 by Troy Hinckle
 ;; Author: Troy Hinckley <troy.hinckley@gmail.com>
 ;; URL: https://github.com/CeleritasCelery/company-plsense
 ;; Version: 0.1.0
@@ -40,7 +39,6 @@
 
 (require 'company) ; company fontend
 (require 'cl-lib)  ; `cl-case'
-(require 'cl)      ; `incf' alias
 (require 'tq)      ; transcation queues. Note modifications below
 (require 'dash)    ; List manipulation library
 (require 's)       ; String manipulation library
@@ -159,7 +157,7 @@ that does some post processing before TIMEOUT."
                 t)
     (while (and (< counter limit) (not done))
       (accept-process-output company-plsense--process 0.2 nil t)
-      (incf counter))
+      (cl-incf counter))
     (if done
         (replace-regexp-in-string "\n?>\\s-\\'" "" reply)
       (setcar company-plsense--queue nil))))
