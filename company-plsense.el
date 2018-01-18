@@ -432,13 +432,15 @@ Contains all lines from BEG to END."
 This is used to handle redundant edits like
 regexp replace, iedit, or multiple cursors. We don't
 want to send uncompleted symbols to the resolver."
-  (let (pre post (point (point)))
-    (save-excursion
-      (skip-syntax-backward "w_")
-      (setq pre (buffer-substring-no-properties point (point)))
-      (skip-syntax-forward "w_")
-      (setq post (buffer-substring point (point))))
-    (cons pre post)))
+  (cons
+   (->> (point)
+        (buffer-substring-no-properties (point-at-bol))
+        (s-match (rx (0+ (any word "_")) eos))
+        (car))
+   (->> (point)
+        (buffer-substring-no-properties (point-at-eol))
+        (s-match (rx bos (0+ (any word "_"))))
+        (car))))
 
 (defun company-plsense--handle-change (beg end len)
   "Hanlder for `after-change-functions' which update all scopes.
@@ -495,7 +497,7 @@ is disabled."
     (setq company-plsense--active nil)
     (company-plsense--reset-location)
     (remove-hook 'company-mode-hook #'company-plsense--teardown t)
-  (remove-hook 'after-save-hook #'company-plsense--update t)
+    (remove-hook 'after-save-hook #'company-plsense--update t)
     (remove-hook 'after-change-functions #'company-plsense--handle-change t)))
 
 (defun company-plsense--prefix ()
