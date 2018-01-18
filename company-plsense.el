@@ -110,11 +110,14 @@ Every file needs to be opened before it can provide completion candidates.")
   "Regular expression matching a package name.")
 (defvar company-plsense--sub-re (rx bol (* space) "sub" (+ space) (group (+ (any alnum "_"))))
   "Regular expression matching a function name.")
+(defvar company-plsense--active nil
+  "Company PlSense hooks are present in the buffer")
 
 (make-variable-buffer-local 'company-plsense--function-list)
 (make-variable-buffer-local 'company-plsense--package-list)
 (make-variable-buffer-local 'company-plsense--changed-regions)
 (make-variable-buffer-local 'company-plsense--prev-symbol)
+(make-variable-buffer-local 'company-plsense--active)
 
 
 ;;; Server interface commands
@@ -478,16 +481,22 @@ previous TEXT."
     (company-plsense--get-function-scopes)
     (company-plsense--get-package-scopes)
     (company-plsense--open-file (buffer-file-name (current-buffer)))
+    (setq company-plsense--active t)
+    (add-hook 'company-mode-hook #'company-plsense--teardown nil t)
     (add-hook 'after-save-hook #'company-plsense--update nil t)
     (add-hook 'after-change-functions #'company-plsense--handle-change nil t)))
 
-(defun company-plsense-teardown ()
+(defun company-plsense--teardown ()
   "Teardown the current buffer hooks.
-This is required to completely stop `company-plsense'
-even if `company-mode' is disabled."
-  (interactive)
+This will automatically be called when `company-mode'
+is disabled."
+  (when (and (null company-mode)
+             company-plsense--active)
+    (setq company-plsense--active nil)
+    (company-plsense--reset-location)
+    (remove-hook 'company-mode-hook #'company-plsense--teardown t)
   (remove-hook 'after-save-hook #'company-plsense--update t)
-  (remove-hook 'after-change-functions #'company-plsense--handle-change t))
+    (remove-hook 'after-change-functions #'company-plsense--handle-change t)))
 
 (defun company-plsense--prefix ()
   "Grab prefix at point.
